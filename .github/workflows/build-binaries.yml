@@ -2,8 +2,7 @@ name: Build Binaries
 
 on:
   push:
-    branches: [ 'binary-build', 'release/*' ]
-    tags: [ 'v*' ]
+    branches: [ 'binary-build' ]
   workflow_dispatch:
     inputs:
       platforms:
@@ -91,7 +90,6 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     
@@ -106,14 +104,32 @@ jobs:
           echo "=== Downloaded artifacts ==="
           find artifacts -type f -ls
 
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: binary-${{ steps.sha.outputs.short }}
+          name: Binary Build ${{ steps.sha.outputs.short }}
           files: |
             artifacts/**/*.zip
             artifacts/**/*.tar.gz
-          generate_release_notes: true
+          generate_release_notes: false
+          body: |
+            自动构建的二进制文件 (实验性)
+            
+            分支: `binary-build`
+            提交: ${{ github.sha }}
+            
+            ## 下载
+            - Windows x64: `antigravity-win-x64.zip`
+            - Linux x64: `antigravity-linux-x64.tar.gz`
+            - Linux ARM64 (Termux): `antigravity-linux-arm64.tar.gz`
+            - macOS x64: `antigravity-macos-x64.tar.gz`
+            - macOS ARM64: `antigravity-macos-arm64.tar.gz`
           draft: false
-          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') || contains(github.ref, '-rc') }}
+          prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

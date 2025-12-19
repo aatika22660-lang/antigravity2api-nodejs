@@ -20,17 +20,15 @@ COPY dist/antigravity-linux-* /app/antigravity
 COPY dist/public /app/public
 COPY dist/bin /app/bin
 COPY dist/config.json /app/config.json
-COPY dist/.env.example /app/.env.example
 
 # 设置执行权限
 RUN chmod +x /app/antigravity && \
     (chmod +x /app/bin/* 2>/dev/null || true)
 
-# 创建数据和图片目录
-RUN mkdir -p /app/data /app/public/images
-
-# 复制 .env.example 为默认 .env
-RUN cp /app/.env.example /app/.env
+# 创建数据和图片目录，以及空白 .env 文件
+RUN mkdir -p /app/data /app/public/images && \
+    echo "# 环境变量配置文件" > /app/.env && \
+    echo "# 如果不配置凭据，系统会自动生成随机凭据" >> /app/.env
 
 # 创建启动脚本：同步环境变量到 .env 文件
 RUN cat > /app/entrypoint.sh << 'EOF'

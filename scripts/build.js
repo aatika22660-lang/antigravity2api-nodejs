@@ -187,18 +187,36 @@ try {
   // 复制 public 目录（排除 images）
   const publicSrcDir = path.join(rootDir, 'public');
   const publicDestDir = path.join(distDir, 'public');
+  console.log(`  Source: ${publicSrcDir}`);
+  console.log(`  Dest: ${publicDestDir}`);
+  console.log(`  Source exists: ${fs.existsSync(publicSrcDir)}`);
+  
   if (fs.existsSync(publicSrcDir)) {
-    if (fs.existsSync(publicDestDir)) {
-      fs.rmSync(publicDestDir, { recursive: true, force: true });
+    try {
+      if (fs.existsSync(publicDestDir)) {
+        console.log('  Removing existing public directory...');
+        fs.rmSync(publicDestDir, { recursive: true, force: true });
+      }
+      // 使用系统命令复制目录（更可靠）
+      console.log('  Copying public directory...');
+      if (process.platform === 'win32') {
+        execSync(`xcopy /E /I /Y /Q "${publicSrcDir}" "${publicDestDir}"`, { stdio: 'pipe', shell: true });
+      } else {
+        fs.mkdirSync(publicDestDir, { recursive: true });
+        execSync(`cp -r "${publicSrcDir}"/* "${publicDestDir}/"`, { stdio: 'pipe', shell: true });
+      }
+      // 删除 images 目录（运行时生成，不需要打包）
+      const imagesDir = path.join(publicDestDir, 'images');
+      if (fs.existsSync(imagesDir)) {
+        fs.rmSync(imagesDir, { recursive: true, force: true });
+      }
+      console.log('  ✓ Copied public directory');
+    } catch (err) {
+      console.error('  ❌ Failed to copy public directory:', err.message);
+      throw err;
     }
-    // 直接全复制 public 目录
-    fs.cpSync(publicSrcDir, publicDestDir, { recursive: true });
-    // 删除 images 目录（运行时生成，不需要打包）
-    const imagesDir = path.join(publicDestDir, 'images');
-    if (fs.existsSync(imagesDir)) {
-      fs.rmSync(imagesDir, { recursive: true, force: true });
-    }
-    console.log('  ✓ Copied public directory');
+  } else {
+    console.error('  ❌ Source public directory not found!');
   }
   
   // 复制 bin 目录（只复制对应平台的文件）

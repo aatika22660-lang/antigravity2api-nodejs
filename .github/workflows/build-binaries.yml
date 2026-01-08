@@ -118,8 +118,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: binary-${{ steps.sha.outputs.short }}
+          tag_name: ${{ github.ref_name }}-${{ steps.sha.outputs.short }}
           name: Binary Build ${{ steps.sha.outputs.short }}
+          make_latest: ${{ github.ref_name == 'main' || github.ref_name == 'master' }}
+
           files: |
             artifacts/**/*.zip
             artifacts/**/*.tar.gz

@@ -618,6 +618,7 @@ export function convertGeminiToGeminiCli(geminiRequest, modelName) {
   } else {
     enableThinking = isEnableThinking(actualModelName);
   }
+  
   // 深拷贝请求
   const request = JSON.parse(JSON.stringify(geminiRequest));
   
@@ -639,6 +640,7 @@ export function convertGeminiToGeminiCli(geminiRequest, modelName) {
       }
     }
   }
+  
   // 规范化 generationConfig
   if (request.generationConfig) {
     const normalizedParams = normalizeGeminiParameters(request.generationConfig);
@@ -646,7 +648,7 @@ export function convertGeminiToGeminiCli(geminiRequest, modelName) {
   } else {
     request.generationConfig = toGenerationConfig({}, enableThinking, actualModelName);
   }
-  process.exit(0)
+  
   // 移除不需要的字段
   delete request.safetySettings;
   

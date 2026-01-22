@@ -1,8 +1,9 @@
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { platform, arch } from 'os';
+import { StringDecoder } from 'string_decoder';
 import zlib from 'zlib';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -82,6 +83,15 @@ class FingerprintRequester {
 
     if (!existsSync(binaryPath)) {
       throw new Error(`Binary not found: ${binaryPath}`);
+    }
+
+    // 非 Windows 系统自动赋予执行权限
+    if (platform() !== 'win32') {
+      try {
+        chmodSync(binaryPath, 0o755);
+      } catch (err) {
+        // 忽略权限设置失败（可能已有权限）
+      }
     }
 
     return binaryPath;
@@ -166,9 +176,12 @@ class FingerprintRequester {
         });
       }
 
+      // 使用 StringDecoder 处理 UTF-8 边界问题
+      const decoder = new StringDecoder('utf8');
+      
       proc.stdout.on('data', (chunk) => {
         if (!headersParsed) {
-          headerBuffer += chunk.toString();
+          headerBuffer += chunk.toString('utf8');
           const headerEndIndex = headerBuffer.indexOf('\r\n\r\n');
           
           if (headerEndIndex !== -1) {
@@ -198,8 +211,9 @@ class FingerprintRequester {
             
             // Process body part after headers
             if (bodyPart) {
-              bodyChunks.push(Buffer.from(bodyPart));
-              totalLoaded += bodyPart.length;
+              const bodyBuffer = Buffer.from(bodyPart, 'utf8');
+              bodyChunks.push(bodyBuffer);
+              totalLoaded += bodyBuffer.length;
               if (onDownloadProgress) {
                 onDownloadProgress({
                   loaded: totalLoaded,
@@ -212,10 +226,11 @@ class FingerprintRequester {
           }
         } else {
           // Headers already parsed, process body chunks
-          const chunkStr = chunk.toString();
+          // 使用 StringDecoder 正确处理 UTF-8 多字节字符边界
+          const chunkStr = decoder.write(chunk);
           bodyChunks.push(chunk);
           totalLoaded += chunk.length;
-          if (onDownloadProgress) {
+          if (onDownloadProgress && chunkStr) {
             onDownloadProgress({
               loaded: totalLoaded,
               total: parseInt(responseHeaders['content-length']) || 0,
@@ -233,6 +248,19 @@ class FingerprintRequester {
       proc.on('close', async (code) => {
         clearTimeout(timeoutId);
         this.activeProcesses.delete(proc);
+        
+        // 处理 decoder 中剩余的字节
+        if (headersParsed && decoder) {
+          const remaining = decoder.end();
+          if (remaining && onDownloadProgress) {
+            onDownloadProgress({
+              loaded: totalLoaded,
+              total: parseInt(responseHeaders['content-length']) || 0,
+              chunk: remaining,
+              status: responseStatus,
+            });
+          }
+        }
 
         if (code !== 0) {
           let errorInfo = { error: `Process exited with code ${code}`, error_type: 'UNKNOWN_ERROR' };

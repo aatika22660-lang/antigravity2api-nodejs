@@ -3,13 +3,12 @@
  * 处理 /v1/chat/completions 请求，支持流式和非流式响应
  */
 
-import { generateAssistantResponse, generateAssistantResponseNoStream, getModelsWithQuotas } from '../../api/client.js';
+import { generateAssistantResponse, generateAssistantResponseNoStream } from '../../api/client.js';
 import { generateRequestBody, prepareImageRequest } from '../../utils/utils.js';
 import { buildOpenAIErrorPayload } from '../../utils/errors.js';
 import logger from '../../utils/logger.js';
 import config from '../../config/config.js';
 import tokenManager from '../../auth/token_manager.js';
-import quotaManager from '../../auth/quota_manager.js';
 import {
   createOpenAIStreamChunk as createStreamChunk,
   createOpenAIChatCompletionResponse
@@ -48,25 +47,6 @@ export const handleOpenAIRequest = async (req, res) => {
       throw new Error('没有可用的token，请运行 npm run login 获取token');
     }
 
-    // 获取 tokenId 用于冷却状态管理
-    const tokenId = tokenManager.getTokenId(token);
-
-    // 创建刷新额度的回调函数
-    const refreshQuota = async () => {
-      if (!tokenId) return;
-      const quotas = await getModelsWithQuotas(token);
-      quotaManager.updateQuota(tokenId, quotas);
-    };
-
-    // 创建 with429Retry 选项
-    const createRetryOptions = (prefix) => ({
-      loggerPrefix: prefix,
-      onAttempt: () => tokenManager.recordRequest(token, model),
-      tokenId,
-      modelId: model,
-      refreshQuota
-    });
-
     const isImageModel = model.includes('-image');
     const requestBody = generateRequestBody(messages, model, params, tools, token);
 
@@ -88,7 +68,8 @@ export const handleOpenAIRequest = async (req, res) => {
           const { content, usage, reasoningSignature } = await with429Retry(
             () => generateAssistantResponseNoStream(requestBody, token),
             safeRetries,
-            createRetryOptions('chat.stream.image ')
+            'chat.stream.image ',
+            () => tokenManager.recordRequest(token, model)
           );
           const delta = { content };
           if (reasoningSignature && config.passSignatureToClient) {
@@ -129,7 +110,8 @@ export const handleOpenAIRequest = async (req, res) => {
               }
             }),
             safeRetries,
-            createRetryOptions('chat.stream ')
+            'chat.stream ',
+            () => tokenManager.recordRequest(token, model)
           );
 
           writeStreamData(res, { ...createStreamChunk(id, created, model, {}, hasToolCall ? 'tool_calls' : 'stop'), usage: usageData });
@@ -175,7 +157,8 @@ export const handleOpenAIRequest = async (req, res) => {
             }
           }),
           safeRetries,
-          createRetryOptions('chat.fake_no_stream ')
+          'chat.fake_no_stream ',
+          () => tokenManager.recordRequest(token, model)
         );
 
         // 构建非流式响应
@@ -218,7 +201,8 @@ export const handleOpenAIRequest = async (req, res) => {
       const { content, reasoningContent, reasoningSignature, toolCalls, usage } = await with429Retry(
         () => generateAssistantResponseNoStream(requestBody, token),
         safeRetries,
-        createRetryOptions('chat.no_stream ')
+        'chat.no_stream ',
+        () => tokenManager.recordRequest(token, model)
       );
 
       // DeepSeek 格式：reasoning_content 在 content 之前
